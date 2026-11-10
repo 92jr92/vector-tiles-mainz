@@ -1,0 +1,84 @@
+services:
+  db:
+    platform: linux/amd64
+    build:
+      context: ./db
+      dockerfile: Dockerfile
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_DB: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - dbdata:/var/lib/postgresql/data   # Persistentes Datenvolume (PostgreSQL)
+      - ./geodata:/data:ro                # Read-only Mount für Geodaten im Container
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    depends_on:
+      geoserver-init:
+        condition: service_completed_successfully
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/postgres
+    ports:
+      - "5001:5000"
+
+  geoserver:
+    image: kartoza/geoserver:2.24.2
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      - GEOSERVER_ADMIN_PASSWORD=geoserver
+      - GEOSERVER_ADMIN_USER=admin
+      - SAMPLE_DATA=false
+      - INITIAL_MEMORY=1G
+      - MAXIMUM_MEMORY=2G
+    ports:
+      - "8080:8080"
+    volumes:
+      - geoserver_data:/opt/geoserver/data_dir
+      - ./geodata:/data:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/geoserver/web/"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  geoserver-init:
+    build:
+      context: ./geoserver_init
+      dockerfile: Dockerfile
+    depends_on:
+      gdal-import:
+        condition: service_completed_successfully
+      geoserver:
+        condition: service_healthy
+    volumes:
+      - ./geodata:/data:ro
+
+  gdal-import:
+    build:
+      context: ./scripts
+      dockerfile: Dockerfile
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: postgres
+    volumes:
+      - ./geodata:/data:ro
+
+volumes:
+  dbdata:
+  geoserver_data:

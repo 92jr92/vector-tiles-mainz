@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <title>pydeck / deck.gl + Carto Light + WMS test</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <!-- MapLibre GL -->
+    <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@3.6.1/dist/maplibre-gl.css" />
+    <script src="https://unpkg.com/maplibre-gl@3.6.1/dist/maplibre-gl.js"></script>
+    <!-- deck.gl core and geo-layers (TileLayer/BitmapLayer are included in dist.min.js) -->
+    <script src="https://unpkg.com/deck.gl@8.9.36/dist.min.js"></script>
+    <style>
+      html, body, #map { height: 100%; margin: 0; }
+      .legend {
+        position: absolute;
+        z-index: 2;
+        top: 12px; left: 12px;
+        padding: 10px 12px;
+        background: rgba(255,255,255,0.9);
+        border-radius: 12px;
+        box-shadow: 0 4px 14px rgba(0,0,0,0.12);
+        font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+        font-size: 12px;
+        line-height: 1.4;
+      }
+      .legend b { font-size: 13px; }
+      .legend code { background: #f3f3f3; padding: 1px 4px; border-radius: 4px; }
+    </style>
+  </head>
+  <body>
+    <div id="map"></div>
+    <div class="legend">
+      <b>Carto Light + WMS overlay example</b><br/>
+      Basemap: Carto Positron (no key required)<br/>
+      WMS：<code>topp:states</code>（Geoserver Demo）<br/>
+      WMS tiles are requested through deck.gl <code>TileLayer</code> + <code>BitmapLayer</code> (transparent PNG)<br/>
+    </div>
+
+    <script>
+      // Initialize the MapLibre basemap (Carto Positron, no key required)
+      const map = new maplibregl.Map({
+        container: 'map',
+        style: 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json',
+        center: [-96, 37.8], // Center on the USA
+        zoom: 4,
+        pitch: 0,
+        attributionControl: true
+      });
+
+      // Overlay deck.gl on MapLibre
+      const overlay = new deck.MapboxOverlay({
+        interleaved: true, // Blend the WebGL overlay with the basemap
+        layers: []
+      });
+
+      map.addControl(overlay);
+
+      // Example WMS service (public demo): GeoServer topp:states
+      // Use WMS 1.3.0 + EPSG:4326 (axis order: lat,lon, i.e. south,west,north,east)
+      const WMS_BASE =
+        'https://ahocevar.com/geoserver/wms?' +
+        'service=WMS&version=1.3.0&request=GetMap' +
+        '&layers=topp:states' +
+        '&styles=' +
+        '&format=image/png' +
+        '&transparent=true' +
+        '&crs=EPSG:4326' +
+        '&width=256&height=256' +
+        '&bbox='; // Append south,west,north,east here
+
+      // WMS overlay: request each tile with TileLayer, then render it within its geographic bounds using BitmapLayer
+      const wmsLayer = new deck.TileLayer({
+        id: 'wms-layer',
+        tileSize: 256,
+        minZoom: 0,
+        maxZoom: 14,
+        refinementStrategy: 'no-overlap',
+        renderSubLayers: (subLayerProps) => {
+          const {west, south, east, north} = subLayerProps.tile.bbox; // WGS84 (lon/lat)
+          // WMS 1.3.0 + EPSG:4326 bbox order: S, W, N, E (lat, lon, lat, lon)
+          const url = `${WMS_BASE}${south},${west},${north},${east}`;
+          return new deck.BitmapLayer(subLayerProps, {
+            id: `${subLayerProps.id}-bitmap`,
+            bounds: [west, south, east, north], // [minX, minY, maxX, maxY]，WGS84
+            image: url,
+            opacity: 0.75, // Semi-transparent overlay on the basemap
+            desaturate: 0,
+          });
+        }
+      });
+
+      // Add a point layer to test interaction and overlays
+      const scatter = new deck.ScatterplotLayer({
+        id: 'poi',
+        data: [
+          {name: 'Tiananmen', position: [116.397, 39.908]},
+          {name: 'Golden Gate', position: [-122.478, 37.8199]},
+        ],
+        getPosition: d => d.position,
+        getRadius: 60000, // meters
+        radiusUnits: 'meters',
+        pickable: true
+      });
+
+      // Pass the layers to the overlay
+      overlay.setProps({ layers: [wmsLayer, scatter] });
+
+      // Hover tooltip
+      map.on('mousemove', (e) => {
+        const info = overlay.pickObject({x: e.point.x, y: e.point.y});
+        map.getCanvas().style.cursor = info ? 'pointer' : '';
+      });
+
+      // Click popup
+      map.on('click', (e) => {
+        const info = overlay.pickObject({x: e.point.x, y: e.point.y});
+        if (info && info.layer && info.layer.id === 'poi') {
+          const name = info.object.name;
+          new maplibregl.Popup()
+            .setLngLat(info.object.position)
+            .setHTML(`<b>${name}</b>`)
+            .addTo(map);
+        }
+      });
+
+      // Ensure the overlay follows the map view
+      map.on('move', () => {
+        overlay.setProps({
+          viewState: {
+            longitude: map.getCenter().lng,
+            latitude: map.getCenter().lat,
+            zoom: map.getZoom(),
+            bearing: map.getBearing(),
+            pitch: map.getPitch()
+          }
+        });
+      });
+    </script>
+  </body>
+</html>

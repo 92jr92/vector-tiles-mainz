@@ -1,0 +1,17 @@
+Uebung3/Uebung3_Folium.ipynb
+Uebung3/maps/map_5_3d.html
+Uebung5_mac/geodata/mainz.tif
+Uebung5_win/geodata/mainz.tif
+Uebung7/data/*.geojson
+Uebung7/data/*.csv
+Uebung7/Punktmuster1.ipynb
+Uebung8/Punktmuster2.ipynb
+Uebung9/Autokorrelation1.ipynb
+Uebung10/Autokorrelation2.ipynb
+Uebung11/Interpolation.ipynb
+Uebung12/Data/*.zip
+Uebung12/Data/*.tif
+Uebung12/cache/*
+
+# macOS Finder metadata
+.DS_Store
